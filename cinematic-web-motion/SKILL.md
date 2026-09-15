@@ -1,6 +1,6 @@
 ---
 name: cinematic-web-motion
-description: Create premium cinematic web experiences with scroll-driven storytelling, sophisticated motion design, 3D scenes, camera movement, video scrubbing and frame sequences. Use when building or redesigning websites that should feel cinematic, immersive, premium and visually distinctive, especially landing pages and brand experiences.
+description: Create premium cinematic web experiences with scroll-driven storytelling, sophisticated motion design, 3D scenes, camera movement, video scrubbing, frame-by-frame scroll scrubbing, AI-generated video pipelines, subject isolation, kinetic typography and micro-interactions. Use when building or redesigning websites that should feel cinematic, immersive, premium and visually distinctive, especially landing pages and brand experiences.
 ---
 
 # Cinematic Web Motion
@@ -29,10 +29,14 @@ Use this skill when the task involves one or more of:
 - video controlled by scroll
 - frame-by-frame scroll animation
 - immersive hero sections
-- sophisticated page transitions
+- sophisticated page transitions and section handoffs
 - visual storytelling for brands
 - high-end automotive, architecture, technology, product or service websites
 - redesigns where the existing site needs a more distinctive visual experience
+- AI-generated video or imagery turned into a frame-by-frame scroll animation
+- subject isolation (character, product, vehicle separated from its background)
+- kinetic typography / text motion
+- magnetic buttons, cursor interactions and other high-quality micro-interactions
 
 Do not force this skill onto ordinary dashboards, documentation, simple CRUD applications or content-heavy sites where cinematic motion would reduce usability.
 
@@ -142,6 +146,35 @@ Do not build important cinematic effects around arbitrary scroll event callbacks
 
 Use requestAnimationFrame, a timeline library or another controlled animation loop.
 
+## Animation mapping
+
+For any section more complex than a simple fade-in, write the progress-to-state mapping down before implementing. Example:
+
+```text
+0.00  hero visible, subject at rest
+0.15  supporting text begins to fade out
+0.30  subject begins moving
+0.50  subject reaches the midpoint of the frame
+0.70  background transitions
+0.85  next section's text starts appearing
+1.00  handoff to next section complete
+```
+
+This mapping is what makes scroll-scrubbed frame sequences, GSAP timelines and section handoffs consistent with each other — every technology in the section should be reading from the same progress value and the same mapping, not from independent, uncoordinated triggers.
+
+## Visual hierarchy
+
+For every animated section, be able to answer:
+
+1. What should the visitor see first?
+2. What is moving, specifically?
+3. Why is it moving — what does the motion communicate?
+4. What should the visitor discover as they keep scrolling?
+5. What is the next visual state?
+6. Where does the animation end, and what happens at that boundary?
+
+If you cannot answer "why is it moving," reconsider whether it should move at all. Do not animate everything in a section simultaneously — see "Motion hierarchy" above.
+
 ## Technology selection
 
 Choose the simplest suitable implementation.
@@ -155,6 +188,18 @@ Use CSS for:
 - transforms
 - basic transitions
 - small UI motion
+
+### Framer Motion
+
+Prefer Framer Motion when working in React and the need is:
+
+- entrance/exit animations
+- layout transitions and shared-layout ("magic move") transitions between states or routes
+- simple scroll-linked transforms (e.g. `useScroll`/`useTransform`-style progress mapping)
+- hover/tap/drag micro-interactions expressed declaratively alongside components
+- UI motion that should stay tightly coupled to component state
+
+Framer Motion and GSAP are not mutually exclusive on the same page — it's reasonable to use Framer Motion for UI-level motion and GSAP for a complex pinned cinematic timeline elsewhere on the same site. Avoid using both for the same effect.
 
 ### GSAP + ScrollTrigger
 
@@ -196,6 +241,19 @@ Use Canvas when:
 Use modern image formats such as WebP or AVIF where practical.
 
 Load frames progressively rather than downloading a huge sequence immediately.
+
+Decide the frame count and the scroll distance together before any source video is produced or extracted — see `references/image-sequences.md` for the planning method and the exact scroll-progress-to-frame-index formula.
+
+### SVG
+
+Use SVG for:
+
+- logos
+- icons
+- line/path drawing (stroke-dashoffset reveals)
+- simple illustrative shapes and morphs
+
+SVG animation is cheap and crisp at any resolution, and is usually the right choice before reaching for Canvas or a heavier library for anything logo/icon/line-based.
 
 ### Three.js
 
@@ -253,6 +311,65 @@ For example:
 
 Do not hard-code business logic into the media renderer.
 
+## Subject isolation
+
+When a scene centers on a character, product, vehicle or other focal object, check whether that subject should be isolated from its background rather than treated as one flat scene:
+
+```text
+Layer 1  Background
+Layer 2  Typography
+Layer 3  Subject (character / product / vehicle)
+Layer 4  Decorative elements
+```
+
+An isolated subject can be animated, scaled, pinned and handed off between sections independently of its background. Prefer isolating the subject before animating it, especially when the subject originates from generated video — see `references/ai-video-pipeline.md`.
+
+## AI-generated video and image assets
+
+When a cinematic section needs a visual asset that does not already exist, use the project's KIE Creative MCP for image and video generation rather than defaulting to stock imagery or skipping the visual entirely.
+
+An AI-generated video is not automatically a `<video>` element. It is frequently raw material for a scroll-scrubbed frame sequence:
+
+```text
+AI video → KIE Creative MCP → rendered video
+  → frames extracted → WebP/AVIF sequence
+  → scroll position selects frame → frame is rendered
+```
+
+The result is an interactive, scroll-controlled experience, not passive video playback.
+
+Prefer this end-to-end order for a scroll-scrubbed animated subject:
+
+1. define the visual concept
+2. analyze any design reference supplied
+3. determine the UI layout and text position (headline, subtext, CTA) before writing any prompt
+4. generate a key visual (still), composed around the reserved UI-safe area
+5. isolate the subject
+6. write a full, production-grade video prompt (never a one-line description) — see below
+7. generate video via the KIE Creative MCP, producing multiple deliberately different variants for hero/scroll-critical sequences
+8. select the best variant against the actual website composition, not in isolation
+9. conform the video to the needed frame rate
+10. extract exactly the planned number of frames
+11. optimize frames for the web
+12. implement scroll-scrubbing
+13. implement pinning
+14. implement the web/UI overlay in the reserved UI-safe area
+15. implement the section handoff
+16. implement a mobile fallback
+17. test performance
+
+Do not generate an arbitrary video and then try to force the animation or the text overlay to fit it afterward — the frame count, scroll distance, motion pacing and UI-safe area must be planned before generation, and the generated footage is chosen/regenerated to match that plan. Full detail in `references/ai-video-pipeline.md`.
+
+### Video prompt engineering
+
+The prompt handed to the video model is a first-class design artifact, not an afterthought. A prompt for a web-bound video must specify subject, starting position, action, body mechanics, camera behavior, composition, lighting, environment, temporal progression (start → motion → end state) and — critically — which regions of the frame must stay visually clean for the planned text/CTA overlay.
+
+Hard rule: never let the video model render UI text, headlines, buttons or logos into the footage. The video is the visual layer only; real text is layered on top afterward as HTML/CSS. Write the prompt so composition and motion naturally leave the planned text area clean, rather than depending on the model to draw the text and then cropping it out.
+
+Do not wait for the user to say "leave room for the text." If the layout implies text or UI will sit over the video, work out the UI-safe area and encode it into the prompt automatically, before generating anything.
+
+Full prompt structure, camera vocabulary, negative-constraint guidance, use-case profiles (cinematic hero, scroll-scrub character, product showcase, section transition, background animation) and variant-selection criteria are in `references/video-prompt-engineering.md` — read it before writing any prompt for a web-bound AI video.
+
 ## Transitions
 
 Prefer physical or conceptual transitions.
@@ -275,6 +392,18 @@ Weak examples:
 - unrelated 3D objects
 - excessive neon
 - generic SaaS blobs
+
+## Section handoffs
+
+Prefer a handoff over a hard cut whenever two adjacent sections share a visual or narrative relationship: a subject that continues moving from one section into the next, a headline that hands off to the next section's headline, or a background that morphs rather than switches. Plan what crosses the section boundary, in what state it arrives, and where it settles, as part of the animation mapping — not after both sections are already built independently. A hard cut is fine when sections are genuinely unrelated. See `references/transitions.md` for handoff patterns.
+
+## Typography motion
+
+Text is a designed, animatable element — not just content that fades in by default. Useful techniques include character/word/line reveals, masked or clip-path reveals, scroll-bound split text, blur-to-sharp focus, scroll-based scale/opacity, and variable-font weight animation. Match the technique to its narrative beat: a hero statement can justify a one-time reveal; a scroll-scrubbed section should bind text state to the same progress value as the rest of the scene. Never character-stagger long-form body copy, and never let animated text fall out of the accessibility tree. Full guidance in `references/typography-motion.md`.
+
+## Micro-interactions
+
+Small interface-level motion — buttons, links, cards, navigation, cursor-reactive elements — should feel intentional and subtle, not flashy. Useful patterns: magnetic pull toward the cursor within a small radius, subtle scale on hover, underline reveals, icon nudges, cursor-following elements with slight lag. Restrict cursor-following and magnetic effects to devices with real pointer input, always provide an equivalent `:focus-visible` state for keyboard users, and keep the interaction responsive even mid-animation. Full guidance in `references/micro-interactions.md`.
 
 ## Design direction
 
@@ -553,6 +682,34 @@ Good:
 
 The 3D visual language is derived from the actual business.
 
+## Debugging discipline
+
+Scroll-driven cinematic code fails in ways that are easy to visually paper over rather than actually fix, particularly around pinning, ScrollTrigger configuration, z-index, overflow, sticky positioning, transforms, viewport height, responsive breakpoints, hydration, and animation state.
+
+When a quick change makes a bug appear to go away, check whether it addressed the actual cause or only hid the symptom. "The section looks right again" is not the same claim as "the bug is fixed." Examples of the difference:
+
+- Adding `overflow: hidden` to stop a stray scrollbar without finding which element is overflowing — the underlying layout bug remains and will resurface elsewhere.
+- Increasing `end` on a ScrollTrigger until pinning "feels" right without understanding why the original value produced the wrong pin duration.
+- Wrapping a hydration mismatch in a client-only render without understanding why server and client markup diverged.
+- Adjusting a `z-index` until an element appears on top without understanding why the stacking context put it underneath in the first place.
+
+Before moving on from a fix, be able to state why the original code was wrong — not just that the new code visually resolves it.
+
+## Project documentation
+
+If the project does not yet have a CLAUDE.md and the work involves a non-trivial cinematic build, create one before making large-scale changes. Document:
+
+- tech stack
+- animation architecture (which sections use CSS, Framer Motion, GSAP, Canvas, SVG, Three.js, and why)
+- libraries in use
+- asset strategy (image/video formats, generation source)
+- frame strategy (frame counts, resolutions, loading strategy per sequence)
+- responsive/mobile strategy
+- design rules specific to the project
+- performance rules specific to the project
+
+This keeps later prompts and later sessions consistent with decisions already made, instead of re-deriving or contradicting them.
+
 ## Implementation checklist
 
 Before declaring the cinematic implementation complete, verify:
@@ -575,6 +732,16 @@ Before declaring the cinematic implementation complete, verify:
 - [ ] Existing useful URLs/content are preserved where possible
 - [ ] SEO metadata is implemented
 - [ ] The cinematic section leads naturally to useful content and CTA
+- [ ] Frame count and scroll distance for any frame sequence were planned together, not fitted after the fact
+- [ ] Subject isolation was considered when a focal character/product/vehicle is animated
+- [ ] Any AI-generated video/image asset was produced for this specific sequence, not repurposed unrelated footage
+- [ ] The video prompt was written with the UI layout/text position decided first, and reserves a clean UI-safe area
+- [ ] No UI text, headlines, buttons or logos were rendered by the video model itself
+- [ ] Section handoffs were planned deliberately where a visual/narrative relationship exists between adjacent sections
+- [ ] Kinetic typography respects reading speed and remains in the accessibility tree
+- [ ] Micro-interactions have keyboard-focus equivalents and are disabled on touch where cursor-only
+- [ ] Any apparent bug fix addresses a root cause, not just a visual symptom
+- [ ] A CLAUDE.md documents the animation architecture, if this is a substantial build
 
 ## References
 
@@ -585,8 +752,12 @@ Read the relevant reference files before implementing complex work:
 - `references/gsap-scrolltrigger.md` for GSAP implementation patterns
 - `references/threejs.md` for 3D scene architecture
 - `references/video-scrubbing.md` for scroll-controlled video
-- `references/image-sequences.md` for Canvas frame sequences
-- `references/transitions.md` for visual transition design
+- `references/image-sequences.md` for Canvas frame sequences and the frame-by-frame scroll-scrubbing formula
+- `references/ai-video-pipeline.md` for the KIE Creative MCP workflow, subject isolation and AI-video-to-frame-sequence production
+- `references/video-prompt-engineering.md` for writing production-grade, UI-aware prompts for web-bound AI video
+- `references/typography-motion.md` for kinetic typography techniques
+- `references/micro-interactions.md` for magnetic buttons, cursor interactions and hover motion
+- `references/transitions.md` for visual transition design and section handoffs
 - `references/performance.md` for optimization
 - `references/mobile.md` for mobile-specific strategy
 - `references/accessibility.md` for reduced motion and accessible animation
